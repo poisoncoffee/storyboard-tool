@@ -65,10 +65,21 @@ def createScene():
     root.addChildNode(scene, getScene(KI.activeDocument().activeNode()))
 
 def nextScene():
-    pass
+    allScenes = getAllScenes()
+    currentScene = getScene(KI.activeDocument().activeNode())
+    for i in range(len(allScenes) - 1):
+        if allScenes[i].uniqueId() == currentScene.uniqueId():
+            currentScene.setCollapsed(True)
+            KI.activeDocument().setActiveNode(allScenes[i + 1])
+
 
 def prevScene():
-    pass
+    allScenes = getAllScenes()
+    currentScene = getScene(KI.activeDocument().activeNode())
+    for i in range(1, len(allScenes)):
+        if allScenes[i].uniqueId() == currentScene.uniqueId():
+            currentScene.setCollapsed(True)
+            KI.activeDocument().setActiveNode(allScenes[i - 1])
 
 class StoryboardToolWidget(DockWidget):
     def __init__(self):
@@ -87,7 +98,7 @@ class StoryboardToolWidget(DockWidget):
         hboxlayout.addWidget(nextSceneButton)
         nextSceneButton.released.connect(partial(nextScene))
 
-        prevSceneButton = QPushButton("New Scene")
+        prevSceneButton = QPushButton("Previous Scene")
         prevSceneButton.setToolTip("Go to previous scene")
         hboxlayout.addWidget(prevSceneButton)
         prevSceneButton.released.connect(partial(prevScene))
