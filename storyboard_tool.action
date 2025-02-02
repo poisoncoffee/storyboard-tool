@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ActionCollection version="2" name="Scripts">
+    <Actions category="Scripts">
+        <text>Storyboard Tool</text>
+
+        <Action name="new_scene">
+        <icon></icon>
+        <text>New Scene</text>
+        <activationFlags>1</activationFlags>
+        </Action>
+
+        <Action name="next_scene">
+        <icon></icon>
+        <text>Next Scene</text>
+        <activationFlags>1</activationFlags>
+        </Action>
+
+        <Action name="prev_scene">
+        <icon></icon>
+        <text>Previous Scene</text>
+        <activationFlags>1</activationFlags>
+        </Action>
+
+         <Action name="delete_scene">
+        <icon></icon>
+        <text>Delete Scene</text>
+        <activationFlags>1</activationFlags>
+        </Action>
+
+    </Actions>
+</ActionCollection>

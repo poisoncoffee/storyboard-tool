@@ -1,12 +1,5 @@
 from functools import partial
-from krita import (
-    DockWidget, 
-    DockWidgetFactory, 
-    DockWidgetFactoryBase, 
-    GroupLayer,
-    Krita,
-    InfoObject,
-    Selection )
+from krita import *
 from PyQt5.QtWidgets import QDockWidget, QTextEdit, QMessageBox, QShortcut
 from PyQt5.QtWidgets import (
     QPushButton,
@@ -146,6 +139,34 @@ class StoryboardToolWidget(DockWidget):
     def canvasChanged(self, canvas):
         pass
 
+
+class StoryboardToolExtension(Extension):
+    def __init__(self, parent):
+        super().__init__(parent)
+
+    def setup(self):
+        pass
+
+    def createActions(self, window):
+        newSceneAction = window.createAction(
+                "new_scene",
+                str(i18n("New Scene")))
+        newSceneAction.triggered.connect(createScene)
+
+        nextSceneAction = window.createAction(
+                "next_scene",
+                str(i18n("Next Scene")))
+        nextSceneAction.triggered.connect(nextScene)
+
+        prevSceneAction = window.createAction(
+                "prev_scene",
+                str(i18n("Previous Scene")))
+        prevSceneAction.triggered.connect(prevScene)
+
+        deleteSceneAction = window.createAction(
+                "delete_scene",
+                str(i18n("Delete Scene")))
+        deleteSceneAction.triggered.connect(prevScene)
 
 
 def registerDocker():
