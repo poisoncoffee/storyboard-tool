@@ -106,6 +106,14 @@ def deleteScene():
             currentScene.remove()
 
 
+def duplicateScene():
+    currentScene = getScene(KI.activeDocument().activeNode())
+    if newScene := currentScene.duplicate():
+        KI.activeDocument().rootNode().addChildNode(newScene, getScene(currentScene))
+        setActiveScene(newScene)
+
+
+
 class StoryboardToolWidget(DockWidget):
     def __init__(self):
         super().__init__()
@@ -129,9 +137,14 @@ class StoryboardToolWidget(DockWidget):
         prevSceneButton.released.connect(partial(prevScene))
 
         deleteSceneButton = QPushButton("Delete Scene")
-        deleteSceneButton.setToolTip("Delete currently selected scene(s)")
+        deleteSceneButton.setToolTip("Delete selected scene")
         hboxlayout.addWidget(deleteSceneButton)
         deleteSceneButton.released.connect(partial(deleteScene))
+
+        duplicateSceneButton = QPushButton("Duplicate Scene")
+        duplicateSceneButton.setToolTip("Duplicate selected scene")
+        hboxlayout.addWidget(duplicateSceneButton)
+        duplicateSceneButton.released.connect(partial(duplicateScene))
 
         uiContainer.setLayout(hboxlayout)
         self.setWidget(uiContainer)

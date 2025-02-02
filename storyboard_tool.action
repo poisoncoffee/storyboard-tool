@@ -21,9 +21,15 @@
         <activationFlags>1</activationFlags>
         </Action>
 
-         <Action name="delete_scene">
+        <Action name="delete_scene">
         <icon></icon>
         <text>Delete Scene</text>
+        <activationFlags>1</activationFlags>
+        </Action>
+
+        <Action name="duplicate_scene">
+        <icon></icon>
+        <text>Duplicate Scene</text>
         <activationFlags>1</activationFlags>
         </Action>
 
