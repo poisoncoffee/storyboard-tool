@@ -36,6 +36,10 @@ def isScene(node):
     return False   
 
 
+def isIgnored(scene):
+    return scene.name()[:3] == "IGN"
+
+
 def getScene(node):
     if node is None or isRoot(node):
         return None
@@ -86,20 +90,30 @@ def createScene():
     setActiveScene(scene)
 
 
-def nextScene():
+def getNextActiveScene(scene, reverse=False) -> Node:
     allScenes = getAllScenes()
+    if reverse:
+        allScenes = allScenes[::-1]
+        
+    sceneIdx = next((i for i, scn in enumerate(allScenes) if scn.uniqueId() == scene.uniqueId()), -1)
+    if sceneIdx == -1:
+        return None
+    for scn in allScenes[sceneIdx + 1:]:
+        if not isIgnored(scn):
+            return scn
+    return None
+
+
+def nextScene():   
     currentScene = getScene(KI.activeDocument().activeNode())
-    for i in range(len(allScenes) - 1):
-        if allScenes[i].uniqueId() == currentScene.uniqueId():
-            setActiveScene(allScenes[i + 1])
+    if nextScene := getNextActiveScene(currentScene):
+        setActiveScene(nextScene)
 
 
 def prevScene():
-    allScenes = getAllScenes()
     currentScene = getScene(KI.activeDocument().activeNode())
-    for i in range(1, len(allScenes)):
-        if allScenes[i].uniqueId() == currentScene.uniqueId():           
-            setActiveScene(allScenes[i - 1])
+    if nextScene := getNextActiveScene(currentScene, reverse=True):
+        setActiveScene(nextScene)
 
 
 def deleteScene():
@@ -132,7 +146,14 @@ def pasteScene():
         if newScene := CLIPBOARD_SCENE.duplicate():
             KI.activeDocument().rootNode().addChildNode(newScene, getScene(KI.activeDocument().activeNode()))
             setActiveScene(newScene)
-        
+
+
+def changeSceneIgnored():
+    if currentScene := getScene(KI.activeDocument().activeNode()):
+        if isIgnored(currentScene):
+            currentScene.setName(currentScene.name()[4:]) 
+        else:
+            currentScene.setName(f"IGN {currentScene.name()}")     
 
 
 class StoryboardToolWidget(DockWidget):
@@ -176,6 +197,11 @@ class StoryboardToolWidget(DockWidget):
         pasteSceneButton.setToolTip("Paste scene from clipboard")
         hboxlayout.addWidget(pasteSceneButton)
         pasteSceneButton.released.connect(partial(pasteScene))
+
+        changeSceneIgnoredButton = QPushButton("Mark/Unmark Ignored")
+        changeSceneIgnoredButton.setToolTip("Marks or unmarks scene as ignored")
+        hboxlayout.addWidget(changeSceneIgnoredButton)
+        changeSceneIgnoredButton.released.connect(partial(changeSceneIgnored))
 
         uiContainer.setLayout(hboxlayout)
         self.setWidget(uiContainer)
@@ -226,6 +252,11 @@ class StoryboardToolExtension(Extension):
                 "paste_scene",
                 str(i18n("Paste Scene")))
         pasteSceneAction.triggered.connect(pasteScene)
+
+        changeSceneIgnoredAction = window.createAction(
+                "ignore_scene",
+                str(i18n("Ignore/Unignore Scene")))
+        changeSceneIgnoredAction.triggered.connect(changeSceneIgnored)
 
 
 def registerDocker():

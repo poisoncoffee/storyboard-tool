@@ -45,5 +45,11 @@
         <activationFlags>1</activationFlags>
         </Action>
 
+        <Action name="ignore_scene">
+        <icon></icon>
+        <text>Ignore or Unignore Scene</text>
+        <activationFlags>1</activationFlags>
+        </Action>
+
     </Actions>
 </ActionCollection>
