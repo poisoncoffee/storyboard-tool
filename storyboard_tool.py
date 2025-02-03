@@ -13,6 +13,7 @@ from PyQt5.QtWidgets import (
 )
 
 KI = Krita.instance()
+CLIPBOARD_SCENE = None
 
 def getAllScenes():
     nodes = KI.activeDocument().rootNode().childNodes()
@@ -22,8 +23,10 @@ def getAllScenes():
             scenes.append(node)
     return scenes
 
+
 def isRoot(node):
     return node.uniqueId() == KI.activeDocument().rootNode().uniqueId()
+
 
 def isScene(node):
     scenes = getAllScenes()
@@ -46,6 +49,7 @@ def createBackgroundLayer():
     info = InfoObject()
     info.setProperty("color", "White")
     return KI.activeDocument().createFillLayer("Background", "color", info, Selection())
+
 
 def createEmptyLayer():
     return KI.activeDocument().createNode("Paint Layer", "paintlayer")
@@ -113,6 +117,23 @@ def duplicateScene():
         setActiveScene(newScene)
 
 
+def cutScene():
+    currentScene = getScene(KI.activeDocument().activeNode())
+    nextScene() # Will select next scene
+    if currentScene is not None:
+        global CLIPBOARD_SCENE
+        CLIPBOARD_SCENE = currentScene.duplicate()
+        currentScene.remove()
+
+
+def pasteScene():
+    global CLIPBOARD_SCENE
+    if CLIPBOARD_SCENE is not None:
+        if newScene := CLIPBOARD_SCENE.duplicate():
+            KI.activeDocument().rootNode().addChildNode(newScene, getScene(KI.activeDocument().activeNode()))
+            setActiveScene(newScene)
+        
+
 
 class StoryboardToolWidget(DockWidget):
     def __init__(self):
@@ -145,6 +166,16 @@ class StoryboardToolWidget(DockWidget):
         duplicateSceneButton.setToolTip("Duplicate selected scene")
         hboxlayout.addWidget(duplicateSceneButton)
         duplicateSceneButton.released.connect(partial(duplicateScene))
+
+        cutSceneButton = QPushButton("Cut Scene")
+        cutSceneButton.setToolTip("Cut selected scene")
+        hboxlayout.addWidget(cutSceneButton)
+        cutSceneButton.released.connect(partial(cutScene))
+
+        pasteSceneButton = QPushButton("Paste Scene")
+        pasteSceneButton.setToolTip("Paste scene from clipboard")
+        hboxlayout.addWidget(pasteSceneButton)
+        pasteSceneButton.released.connect(partial(pasteScene))
 
         uiContainer.setLayout(hboxlayout)
         self.setWidget(uiContainer)
@@ -179,7 +210,22 @@ class StoryboardToolExtension(Extension):
         deleteSceneAction = window.createAction(
                 "delete_scene",
                 str(i18n("Delete Scene")))
-        deleteSceneAction.triggered.connect(prevScene)
+        deleteSceneAction.triggered.connect(deleteScene)
+
+        duplicateSceneAction = window.createAction(
+                "duplicate_scene",
+                str(i18n("Duplicate Scene")))
+        duplicateSceneAction.triggered.connect(duplicateScene)
+
+        cutSceneAction = window.createAction(
+                "cut_scene",
+                str(i18n("Cut Scene")))
+        cutSceneAction.triggered.connect(cutScene)
+
+        pasteSceneAction = window.createAction(
+                "paste_scene",
+                str(i18n("Paste Scene")))
+        pasteSceneAction.triggered.connect(pasteScene)
 
 
 def registerDocker():

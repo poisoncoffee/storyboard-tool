@@ -33,5 +33,17 @@
         <activationFlags>1</activationFlags>
         </Action>
 
+        <Action name="cut_scene">
+        <icon></icon>
+        <text>Cut Scene</text>
+        <activationFlags>1</activationFlags>
+        </Action>
+
+        <Action name="paste_scene">
+        <icon></icon>
+        <text>Paste Scene</text>
+        <activationFlags>1</activationFlags>
+        </Action>
+
     </Actions>
 </ActionCollection>
