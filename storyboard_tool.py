@@ -1,5 +1,6 @@
 from functools import partial
 from krita import *
+from PyQt5.QtCore import pyqtSignal
 from PyQt5.QtWidgets import QDockWidget, QTextEdit, QMessageBox, QShortcut
 from PyQt5.QtWidgets import (
     QPushButton,
@@ -11,43 +12,208 @@ from PyQt5.QtWidgets import (
     QGroupBox,
     QWidget,
 )
+from PyQt5.QtCore import QUuid
+
+from dataclasses import dataclass, field
+import json
+from pathlib import Path
+import os
 
 KI = Krita.instance()
-CLIPBOARD_SCENE = None
 
-def getAllScenes():
-    nodes = KI.activeDocument().rootNode().childNodes()
-    scenes = []
-    for node in nodes:
-        if isinstance(node, GroupLayer):
-            scenes.append(node)
-    return scenes
-
-
-def isRoot(node):
-    return node.uniqueId() == KI.activeDocument().rootNode().uniqueId()
-
-
-def isScene(node):
-    scenes = getAllScenes()
-    for scene in scenes:
-        if node.uniqueId() == scene.uniqueId():
-            return True
-    return False   
-
-
-def isIgnored(scene):
-    return scene.name()[:3] == "IGN"
-
-
-def getScene(node):
-    if node is None or isRoot(node):
-        return None
-    elif isScene(node):
-        return node
+def get_active_document_path() -> str | None:
+    active_document = KI.activeDocument()
+    if active_document is not None and (file_path := active_document.fileName()):
+        return file_path        
     else:
-        return getScene(node.parentNode())
+        raise_error("There is no active document or the document has not been saved yet")
+        return None
 
+
+@dataclass
+class Scene:
+    node: Node
+    is_ignored: bool = field(default=False)
+    text: str = field(default="")
+    character_name: str = field(default="")
+    character_tag: str = field(default="")
+
+    def __init__(self, node: Node):
+        self.node = node
+
+    def __copy__(self):
+        scene_copy = Scene(self.node.duplicate())
+        scene_copy.is_ignored = self.is_ignored
+        scene_copy.text = self.text
+        scene_copy.character_name = self.character_name
+        scene_copy.character_tag = self.character_tag
+        return scene_copy
+
+    def to_dict(self):
+        return {
+            "node": self.node.uniqueId().toString(),
+            "is_ignored": self.is_ignored,
+            "text": self.text,
+            "character_name": self.character_name,
+            "character_tag": self.character_tag
+        }
+        
+
+    @classmethod
+    def from_dict(cls, data):
+        return cls(
+            node = KI.activeDocument().nodeByUniqueID(QUuid(data["node"]))
+        ).update_from_dict(data)
+
+
+    def update_from_dict(self, data):
+        if self.node is None:
+            return None
+        self.is_ignored = data["is_ignored"]
+        self.text = data["text"]
+        self.character_name = data["character_name"]
+        self.character_tag = data["character_tag"]
+        return self
+
+
+class SceneManager:
+    def __init__(self):
+        self.filename: str = str(Path(get_active_document_path()).with_suffix(".json"))
+        self.scenes: [Scene] = [] 
+        self.load()
+        self.clipboard: Scene = None
+
+
+    def load(self):
+        try:
+            with open(self.filename, "r") as file:
+                scene_manager_dict = json.load(file)
+                self.scenes = [scene for scene in (Scene.from_dict(scene_data) for scene_data in scene_manager_dict) if scene is not None]
+        except (FileNotFoundError, json.JSONDecodeError):
+            return []
+
+        
+    def save(self):
+        print(f"Saving json at path: {self.filename}")
+        with open(self.filename, "w") as file:
+            json.dump([scene.to_dict() for scene in self.scenes], file, indent=4)
+        KI.activeDocument().save()
+
+
+    def is_root(self, node) -> bool:
+        return node.uniqueId() == KI.activeDocument().rootNode().uniqueId()
+
+
+    def is_scene(self, node) -> bool:
+        return any(node.uniqueId() == scene.node.uniqueId() for scene in self.scenes)
+
+
+    def get_scene(self, node) -> Scene:
+        if node is None or self.is_root(node):
+            return None
+        elif self.is_scene(node):
+            scene = next((scene for scene in self.scenes if scene.node.uniqueId() == node.uniqueId()), None)
+            return scene
+        else:
+            return self.get_scene(node.parentNode())
+
+
+    def get_all_scenes_in_order(self) -> [Scene]:
+        nodes = KI.activeDocument().rootNode().childNodes()
+        return [self.get_scene(node) for node in nodes if self.is_scene(node)]
+        
+ 
+    def get_active_node(self) -> Node:
+        active_node = KI.activeDocument().activeNode()
+        return active_node
+
+             
+    def set_active_scene(self, scene_to_set_active) -> None:
+        for scene in self.scenes:
+            scene.node.setCollapsed(scene.node.uniqueId() != scene_to_set_active.node.uniqueId())
+        KI.activeDocument().setActiveNode(scene_to_set_active.node)
+
+
+    def get_next_active_scene(self, current_scene=None, reverse=False) -> Scene:
+        if current_scene is None:
+            current_scene = self.get_scene(self.get_active_node())
+        all_scenes = self.get_all_scenes_in_order()
+        if reverse:
+            all_scenes = all_scenes[::-1]
+        
+        current_scene_idx = next((i for i, scene in enumerate(all_scenes) if scene.node.uniqueId() == current_scene.node.uniqueId()), -1)
+        if current_scene_idx == -1:
+            return None
+        for scene in all_scenes[current_scene_idx + 1:]:
+            if not scene.is_ignored:
+                return scene
+        return None
+        
+
+    def create_scene(self) -> None:
+        root = KI.activeDocument().rootNode()
+        node = KI.activeDocument().createNode("SNG ", "grouplayer")
+        node.addChildNode(createBackgroundLayer(), None)
+        node.addChildNode(createEmptyLayer(), None)
+        root.addChildNode(node, self.get_active_node())
+        scene = Scene(node)
+        self.set_active_scene(scene)
+        
+        self.scenes.append(scene)
+        self.save()
+
+
+    def remove_scene(self, scene_to_remove=None) -> None:
+        if scene_to_remove is None:
+            scene_to_remove = self.get_scene(self.get_active_node())
+        self.set_active_scene(self.get_next_active_scene(scene_to_remove))        
+        if scene_to_remove is not None:
+            self.scenes = [scene for scene in self.scenes if scene.node.uniqueId() is not scene_to_remove.node.uniqueId()]
+            scene_to_remove.node.remove()
+            self.save()
+
+    
+    def duplicate_scene(self, scene_to_duplicate=None) -> None:
+        if scene_to_duplicate is None:
+            scene_to_duplicate = self.get_scene(self.get_active_node())
+        new_scene = Scene(scene_to_duplicate.node.duplicate())
+        KI.activeDocument().rootNode().addChildNode(new_scene.node, self.get_scene(self.get_active_node()).node)
+        self.scenes.append(new_scene)
+        self.set_active_scene(new_scene)
+        self.save()
+
+
+    def cut_scene(self, scene_to_cut=None) -> None:
+        if scene_to_cut is None:
+            scene_to_cut = self.get_scene(self.get_active_node())
+        print(f"cut_scene scene_to_cut is None: {scene_to_cut is None}")
+        self.set_active_scene(self.get_next_active_scene(scene_to_cut))
+        self.clipboard = Scene(scene_to_cut.node.duplicate())
+        print(f"cut_scene self.clipboard is None: {self.clipboard is None}")
+        self.remove_scene(scene_to_remove=scene_to_cut)
+        print(f"cut_scene self.clipboard after removal is None: {self.clipboard is None}")
+
+
+    def paste_scene(self) -> None:
+        if self.clipboard is not None:
+            self.duplicate_scene(self.clipboard)
+        else:
+            print("Will not paste. No scene in the clipboard.")
+
+
+    def change_scene_ignored(self, scene=None) -> None:
+        if scene is None:
+            scene = self.get_scene(self.get_active_node())
+        if scene.is_ignored:
+            scene.node.setName(scene.node.name()[4:]) 
+        else:
+            scene.node.setName(f"IGN {scene.node.name()}")
+        scene.is_ignored = not scene.is_ignored
+        self.save()
+
+
+# key: Document path, value: SceneManager
+SCENE_MANAGERS: dict[str, SceneManager] = {}       
 
 def createBackgroundLayer():
     info = InfoObject()
@@ -69,91 +235,85 @@ def deleteConfirmationDialog():
     
     if response := msg.exec_():
         return response == QMessageBox.Yes
-    
 
-# Collapses all scenes except active one
-def setActiveScene(activeScene):
-    KI.activeDocument().setActiveNode(activeScene)
-    allScenes = getAllScenes()
-    for scene in allScenes:
-        scene.setCollapsed(scene.uniqueId() != activeScene.uniqueId())
 
+def raise_error(message):
+    msg = QMessageBox()
+    msg.setIcon(QMessageBox.Critical)
+    msg.setText(message)
+    msg.setWindowTitle("Error")
+    msg.setStandardButtons(QMessageBox.Ok)
+
+    msg.exec_()
+
+
+def try_get_scene_manager() -> SceneManager | None:
+    global SCENE_MANAGERS
+    document_path = get_active_document_path()
+    if document_path is None:
+        return None
+    elif Path(document_path).suffix != ".kra":
+        raise_error("Active document is not a .kra file. Storyboard Tool will not work.")
+        return None
+    elif document_path not in SCENE_MANAGERS:
+        SCENE_MANAGERS[document_path] = SceneManager()
+    return SCENE_MANAGERS[document_path]
+         
 
 # UI Actions
 
 def createScene():
-    root = KI.activeDocument().rootNode()
-    scene = KI.activeDocument().createNode("SNG ", "grouplayer")
-    scene.addChildNode(createBackgroundLayer(), None)
-    scene.addChildNode(createEmptyLayer(), None)
-    root.addChildNode(scene, getScene(KI.activeDocument().activeNode()))
-    setActiveScene(scene)
+    scene_manager = try_get_scene_manager()
+    if scene_manager is not None:
+        scene_manager.create_scene()
 
 
-def getNextActiveScene(scene, reverse=False) -> Node:
-    allScenes = getAllScenes()
-    if reverse:
-        allScenes = allScenes[::-1]
-        
-    sceneIdx = next((i for i, scn in enumerate(allScenes) if scn.uniqueId() == scene.uniqueId()), -1)
-    if sceneIdx == -1:
-        return None
-    for scn in allScenes[sceneIdx + 1:]:
-        if not isIgnored(scn):
-            return scn
-    return None
-
-
-def nextScene():   
-    currentScene = getScene(KI.activeDocument().activeNode())
-    if nextScene := getNextActiveScene(currentScene):
-        setActiveScene(nextScene)
+def nextScene():
+    scene_manager = try_get_scene_manager()
+    if scene_manager is not None and (next_scene := scene_manager.get_next_active_scene()):
+        scene_manager.set_active_scene(next_scene)
 
 
 def prevScene():
-    currentScene = getScene(KI.activeDocument().activeNode())
-    if nextScene := getNextActiveScene(currentScene, reverse=True):
-        setActiveScene(nextScene)
+    scene_manager = try_get_scene_manager()
+    if scene_manager is not None and (next_scene := scene_manager.get_next_active_scene(reverse=True)):
+        scene_manager.set_active_scene(next_scene)
 
 
 def deleteScene():
-    if deleteConfirmationDialog():
-        currentScene = getScene(KI.activeDocument().activeNode())
-        nextScene() # Will select next scene
-        if currentScene is not None:
-            currentScene.remove()
+    scene_manager = try_get_scene_manager()
+    if scene_manager is not None and deleteConfirmationDialog():
+        scene_manager.remove_scene()
 
 
 def duplicateScene():
-    currentScene = getScene(KI.activeDocument().activeNode())
-    if newScene := currentScene.duplicate():
-        KI.activeDocument().rootNode().addChildNode(newScene, getScene(currentScene))
-        setActiveScene(newScene)
+    scene_manager = try_get_scene_manager()
+    if scene_manager is not None:
+        scene_manager.duplicate_scene()
 
 
 def cutScene():
-    currentScene = getScene(KI.activeDocument().activeNode())
-    nextScene() # Will select next scene
-    if currentScene is not None:
-        global CLIPBOARD_SCENE
-        CLIPBOARD_SCENE = currentScene.duplicate()
-        currentScene.remove()
+    scene_manager = try_get_scene_manager()
+    if scene_manager is not None:
+        scene_manager.cut_scene()
 
 
 def pasteScene():
-    global CLIPBOARD_SCENE
-    if CLIPBOARD_SCENE is not None:
-        if newScene := CLIPBOARD_SCENE.duplicate():
-            KI.activeDocument().rootNode().addChildNode(newScene, getScene(KI.activeDocument().activeNode()))
-            setActiveScene(newScene)
+    scene_manager = try_get_scene_manager()
+    if scene_manager is not None:
+        scene_manager.paste_scene()
 
 
 def changeSceneIgnored():
-    if currentScene := getScene(KI.activeDocument().activeNode()):
-        if isIgnored(currentScene):
-            currentScene.setName(currentScene.name()[4:]) 
-        else:
-            currentScene.setName(f"IGN {currentScene.name()}")     
+    scene_manager = try_get_scene_manager()
+    if scene_manager is not None:
+        scene_manager.change_scene_ignored()
+
+def printScenes():
+    global SCENE_MANAGERS
+    print(SCENE_MANAGERS)
+    for key, scene_manager in SCENE_MANAGERS.items():
+        print(scene_manager.scenes)
 
 
 class StoryboardToolWidget(DockWidget):
@@ -161,49 +321,61 @@ class StoryboardToolWidget(DockWidget):
         super().__init__()
         self.setWindowTitle("Storyboard Tool")
         uiContainer = QWidget(self)
-        hboxlayout = QHBoxLayout()
+        main_layout = QVBoxLayout(uiContainer)
+        row1 = QHBoxLayout()
+        row2 = QHBoxLayout()
 
         newSceneButton = QPushButton("New Scene")
         newSceneButton.setToolTip("Create new scene")
-        hboxlayout.addWidget(newSceneButton)
+        row1.addWidget(newSceneButton)
         newSceneButton.released.connect(partial(createScene))
 
         nextSceneButton = QPushButton("Next Scene")
         nextSceneButton.setToolTip("Go to next scene")
-        hboxlayout.addWidget(nextSceneButton)
+        row1.addWidget(nextSceneButton)
         nextSceneButton.released.connect(partial(nextScene))
 
         prevSceneButton = QPushButton("Previous Scene")
         prevSceneButton.setToolTip("Go to previous scene")
-        hboxlayout.addWidget(prevSceneButton)
+        row1.addWidget(prevSceneButton)
         prevSceneButton.released.connect(partial(prevScene))
 
         deleteSceneButton = QPushButton("Delete Scene")
         deleteSceneButton.setToolTip("Delete selected scene")
-        hboxlayout.addWidget(deleteSceneButton)
+        row1.addWidget(deleteSceneButton)
         deleteSceneButton.released.connect(partial(deleteScene))
 
         duplicateSceneButton = QPushButton("Duplicate Scene")
         duplicateSceneButton.setToolTip("Duplicate selected scene")
-        hboxlayout.addWidget(duplicateSceneButton)
+        row1.addWidget(duplicateSceneButton)
         duplicateSceneButton.released.connect(partial(duplicateScene))
 
         cutSceneButton = QPushButton("Cut Scene")
         cutSceneButton.setToolTip("Cut selected scene")
-        hboxlayout.addWidget(cutSceneButton)
+        row1.addWidget(cutSceneButton)
         cutSceneButton.released.connect(partial(cutScene))
 
         pasteSceneButton = QPushButton("Paste Scene")
         pasteSceneButton.setToolTip("Paste scene from clipboard")
-        hboxlayout.addWidget(pasteSceneButton)
+        row1.addWidget(pasteSceneButton)
         pasteSceneButton.released.connect(partial(pasteScene))
 
         changeSceneIgnoredButton = QPushButton("Mark/Unmark Ignored")
         changeSceneIgnoredButton.setToolTip("Marks or unmarks scene as ignored")
-        hboxlayout.addWidget(changeSceneIgnoredButton)
+        row1.addWidget(changeSceneIgnoredButton)
         changeSceneIgnoredButton.released.connect(partial(changeSceneIgnored))
 
-        uiContainer.setLayout(hboxlayout)
+        debugButton = QPushButton("[DEBUG] Print Scenes]")
+        debugButton.setToolTip("Debug")
+        row1.addWidget(debugButton)
+        debugButton.released.connect(partial(printScenes))
+
+        print("Storyboard Tool initialized")
+
+        main_layout.addLayout(row1)
+        main_layout.addLayout(row2)
+
+        uiContainer.setLayout(main_layout)
         self.setWidget(uiContainer)
 
     def canvasChanged(self, canvas):
@@ -214,8 +386,12 @@ class StoryboardToolExtension(Extension):
     def __init__(self, parent):
         super().__init__(parent)
 
+
     def setup(self):
-        pass
+        docker = DockWidgetFactory(
+        "pykrita_storyboard_tool", DockWidgetFactoryBase.DockRight, StoryboardToolWidget)
+        KI.addDockWidgetFactory(docker)
+
 
     def createActions(self, window):
         newSceneAction = window.createAction(
@@ -258,9 +434,3 @@ class StoryboardToolExtension(Extension):
                 str(i18n("Ignore/Unignore Scene")))
         changeSceneIgnoredAction.triggered.connect(changeSceneIgnored)
 
-
-def registerDocker():
-    docker = DockWidgetFactory(
-        "pykrita_storyboard_tool", DockWidgetFactoryBase.DockRight, StoryboardToolWidget
-    )
-    KI.addDockWidgetFactory(docker)

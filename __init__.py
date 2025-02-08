@@ -1,5 +1,4 @@
-from .storyboard_tool import *
+from .storyboard_tool import StoryboardToolExtension
 from krita import Krita
 
-registerDocker()
 Krita.instance().addExtension(StoryboardToolExtension(Krita.instance()))
