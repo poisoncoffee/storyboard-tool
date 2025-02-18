@@ -1,6 +1,6 @@
 from functools import partial
 from krita import *
-from PyQt5.QtCore import pyqtSignal
+from PyQt5.QtCore import pyqtSignal, QObject
 from PyQt5.QtWidgets import QDockWidget, QTextEdit, QMessageBox, QShortcut
 from PyQt5.QtWidgets import (
     QPushButton,
@@ -13,6 +13,7 @@ from PyQt5.QtWidgets import (
     QWidget,
 )
 from PyQt5.QtCore import QUuid
+from typing import Callable, Tuple
 
 from dataclasses import dataclass, field
 import json
@@ -36,7 +37,6 @@ class Scene:
     is_ignored: bool = field(default=False)
     text: str = field(default="")
     character_name: str = field(default="")
-    character_tag: str = field(default="")
 
     def __init__(self, node: Node):
         self.node = node
@@ -46,7 +46,6 @@ class Scene:
         scene_copy.is_ignored = self.is_ignored
         scene_copy.text = self.text
         scene_copy.character_name = self.character_name
-        scene_copy.character_tag = self.character_tag
         return scene_copy
 
     def to_dict(self):
@@ -55,7 +54,6 @@ class Scene:
             "is_ignored": self.is_ignored,
             "text": self.text,
             "character_name": self.character_name,
-            "character_tag": self.character_tag
         }
         
 
@@ -72,14 +70,17 @@ class Scene:
         self.is_ignored = data["is_ignored"]
         self.text = data["text"]
         self.character_name = data["character_name"]
-        self.character_tag = data["character_tag"]
         return self
 
 
-class SceneManager:
+class SceneManager(QObject):
+    character_name_updated = pyqtSignal(str)
+    text_updated = pyqtSignal(str)
+
     def __init__(self):
+        super().__init__()
         self.filename: str = str(Path(get_active_document_path()).with_suffix(".json"))
-        self.scenes: [Scene] = [] 
+        self.scenes: [Scene] = []
         self.load()
         self.clipboard: Scene = None
 
@@ -93,11 +94,12 @@ class SceneManager:
             return []
 
         
-    def save(self):
+    def save(self, save_document=False):
         print(f"Saving json at path: {self.filename}")
         with open(self.filename, "w") as file:
             json.dump([scene.to_dict() for scene in self.scenes], file, indent=4)
-        KI.activeDocument().save()
+        if save_document:
+            KI.activeDocument().save()
 
 
     def is_root(self, node) -> bool:
@@ -132,6 +134,8 @@ class SceneManager:
         for scene in self.scenes:
             scene.node.setCollapsed(scene.node.uniqueId() != scene_to_set_active.node.uniqueId())
         KI.activeDocument().setActiveNode(scene_to_set_active.node)
+        self.character_name_updated.emit(scene_to_set_active.character_name)
+        self.text_updated.emit(scene_to_set_active.text) 
 
 
     def get_next_active_scene(self, current_scene=None, reverse=False) -> Scene:
@@ -160,7 +164,6 @@ class SceneManager:
         self.set_active_scene(scene)
         
         self.scenes.append(scene)
-        self.save()
 
 
     def remove_scene(self, scene_to_remove=None) -> None:
@@ -170,7 +173,6 @@ class SceneManager:
         if scene_to_remove is not None:
             self.scenes = [scene for scene in self.scenes if scene.node.uniqueId() is not scene_to_remove.node.uniqueId()]
             scene_to_remove.node.remove()
-            self.save()
 
     
     def duplicate_scene(self, scene_to_duplicate=None) -> None:
@@ -180,18 +182,14 @@ class SceneManager:
         KI.activeDocument().rootNode().addChildNode(new_scene.node, self.get_scene(self.get_active_node()).node)
         self.scenes.append(new_scene)
         self.set_active_scene(new_scene)
-        self.save()
 
 
     def cut_scene(self, scene_to_cut=None) -> None:
         if scene_to_cut is None:
             scene_to_cut = self.get_scene(self.get_active_node())
-        print(f"cut_scene scene_to_cut is None: {scene_to_cut is None}")
         self.set_active_scene(self.get_next_active_scene(scene_to_cut))
         self.clipboard = Scene(scene_to_cut.node.duplicate())
-        print(f"cut_scene self.clipboard is None: {self.clipboard is None}")
         self.remove_scene(scene_to_remove=scene_to_cut)
-        print(f"cut_scene self.clipboard after removal is None: {self.clipboard is None}")
 
 
     def paste_scene(self) -> None:
@@ -209,11 +207,26 @@ class SceneManager:
         else:
             scene.node.setName(f"IGN {scene.node.name()}")
         scene.is_ignored = not scene.is_ignored
-        self.save()
 
 
-# key: Document path, value: SceneManager
-SCENE_MANAGERS: dict[str, SceneManager] = {}       
+    def change_character_name(self, text) -> None:
+        current_scene = self.get_scene(self.get_active_node())
+        if current_scene is not None:
+            current_scene.character_name = text
+
+
+    def change_text(self, text) -> None:
+        current_scene = self.get_scene(self.get_active_node())
+        if current_scene is not None:
+            current_scene.text = text
+
+
+    def reemit_signals(self) -> None:
+        current_scene = self.get_scene(self.get_active_node())
+        if current_scene is not None:
+            self.character_name_updated.emit(current_scene.character_name)
+            self.text_updated.emit(current_scene.text)
+
 
 def createBackgroundLayer():
     info = InfoObject()
@@ -247,73 +260,135 @@ def raise_error(message):
     msg.exec_()
 
 
-def try_get_scene_manager() -> SceneManager | None:
-    global SCENE_MANAGERS
-    document_path = get_active_document_path()
-    if document_path is None:
-        return None
-    elif Path(document_path).suffix != ".kra":
-        raise_error("Active document is not a .kra file. Storyboard Tool will not work.")
-        return None
-    elif document_path not in SCENE_MANAGERS:
-        SCENE_MANAGERS[document_path] = SceneManager()
-    return SCENE_MANAGERS[document_path]
-         
+class SceneManagerProvider():
+    def __init__(self):
+        # key: Document path, value: SceneManager
+        self.scene_managers: dict[str, SceneManager] = {}
+        self.widgets_to_connect: dict[QWidget, SceneManager] = {}
+
+        self.set_character_name: Callable = None
+        self.set_text: Callable = None
+
+
+    def create_scene_manager(self) -> SceneManager | None:
+        if self.set_character_name is None or self.set_text is None:
+            raise_error("Cannot initialize Scene Manager, widget does not exist")
+            return None
+        scene_manager = SceneManager()
+        scene_manager.character_name_updated.connect(self.set_character_name)
+        scene_manager.text_updated.connect(self.set_text)
+        return scene_manager
+
+
+    def try_get_scene_manager(self) -> SceneManager | None:
+        document_path = get_active_document_path()
+        if document_path is None:
+            return None
+        elif Path(document_path).suffix != ".kra":
+            raise_error("Active document is not a .kra file. Storyboard Tool will not work.")
+            return None
+        elif document_path not in self.scene_managers:
+            self.scene_managers[document_path] = self.create_scene_manager()
+        return self.scene_managers[document_path]
+
+
+SCENE_MANAGER_PROVIDER = SceneManagerProvider()          
 
 # UI Actions
 
 def createScene():
-    scene_manager = try_get_scene_manager()
+    global SCENE_MANAGER_PROVIDER
+    scene_manager = SCENE_MANAGER_PROVIDER.try_get_scene_manager()
     if scene_manager is not None:
         scene_manager.create_scene()
 
 
 def nextScene():
-    scene_manager = try_get_scene_manager()
+    global SCENE_MANAGER_PROVIDER
+    scene_manager = SCENE_MANAGER_PROVIDER.try_get_scene_manager()
     if scene_manager is not None and (next_scene := scene_manager.get_next_active_scene()):
         scene_manager.set_active_scene(next_scene)
 
 
 def prevScene():
-    scene_manager = try_get_scene_manager()
+    global SCENE_MANAGER_PROVIDER
+    scene_manager = SCENE_MANAGER_PROVIDER.try_get_scene_manager()
     if scene_manager is not None and (next_scene := scene_manager.get_next_active_scene(reverse=True)):
         scene_manager.set_active_scene(next_scene)
 
 
 def deleteScene():
-    scene_manager = try_get_scene_manager()
+    global SCENE_MANAGER_PROVIDER
+    scene_manager = SCENE_MANAGER_PROVIDER.try_get_scene_manager()
     if scene_manager is not None and deleteConfirmationDialog():
         scene_manager.remove_scene()
 
 
 def duplicateScene():
-    scene_manager = try_get_scene_manager()
+    global SCENE_MANAGER_PROVIDER
+    scene_manager = SCENE_MANAGER_PROVIDER.try_get_scene_manager()
     if scene_manager is not None:
         scene_manager.duplicate_scene()
 
 
 def cutScene():
-    scene_manager = try_get_scene_manager()
+    global SCENE_MANAGER_PROVIDER
+    scene_manager = SCENE_MANAGER_PROVIDER.try_get_scene_manager()
     if scene_manager is not None:
         scene_manager.cut_scene()
 
 
 def pasteScene():
-    scene_manager = try_get_scene_manager()
+    global SCENE_MANAGER_PROVIDER
+    scene_manager = SCENE_MANAGER_PROVIDER.try_get_scene_manager()
     if scene_manager is not None:
         scene_manager.paste_scene()
 
 
 def changeSceneIgnored():
-    scene_manager = try_get_scene_manager()
+    global SCENE_MANAGER_PROVIDER
+    scene_manager = SCENE_MANAGER_PROVIDER.try_get_scene_manager()
     if scene_manager is not None:
         scene_manager.change_scene_ignored()
 
+
+def saveDocument():
+    global SCENE_MANAGER_PROVIDER
+    scene_manager = SCENE_MANAGER_PROVIDER.try_get_scene_manager()
+    if scene_manager is not None:
+        scene_manager.save(save_document=True)
+
+
+def update_character_name(text):
+    global SCENE_MANAGER_PROVIDER
+    scene_manager = SCENE_MANAGER_PROVIDER.try_get_scene_manager()
+    if scene_manager is not None:
+        scene_manager.change_character_name(text)
+
+
+def update_text(text):
+    global SCENE_MANAGER_PROVIDER
+    scene_manager = SCENE_MANAGER_PROVIDER.try_get_scene_manager()
+    if scene_manager is not None:
+        scene_manager.change_text(text)
+
+
+def set_text_on_widget(widget, text):
+    widget.blockSignals(True)
+    widget.setText(text)
+    widget.blockSignals(False)
+
+
 def printScenes():
-    global SCENE_MANAGERS
-    print(SCENE_MANAGERS)
-    for key, scene_manager in SCENE_MANAGERS.items():
+    global SCENE_MANAGER_PROVIDER
+    for key, scene_manager in SCENE_MANAGER_PROVIDER.scene_managers.items():
         print(scene_manager.scenes)
+
+
+def refresh_scene_data():
+    scene_manager = SCENE_MANAGER_PROVIDER.try_get_scene_manager()
+    if scene_manager is not None:
+        scene_manager.reemit_signals()
 
 
 class StoryboardToolWidget(DockWidget):
@@ -321,59 +396,83 @@ class StoryboardToolWidget(DockWidget):
         super().__init__()
         self.setWindowTitle("Storyboard Tool")
         uiContainer = QWidget(self)
-        main_layout = QVBoxLayout(uiContainer)
-        row1 = QHBoxLayout()
-        row2 = QHBoxLayout()
+        main_layout = QHBoxLayout(uiContainer)     
+        col1 = QVBoxLayout()
+        col2 = QVBoxLayout()
 
+        # Column 1
+        character_name_edit = QLineEdit()
+        text_edit = QTextEdit()
+        col1.addWidget(character_name_edit)
+        col1.addWidget(text_edit)
+
+        character_name_edit.textChanged.connect(lambda text: update_character_name(text))
+        text_edit.textChanged.connect(lambda: update_text(text_edit.toPlainText()))
+
+        global SCENE_MANAGER_PROVIDER
+        SCENE_MANAGER_PROVIDER.set_character_name = lambda text: set_text_on_widget(character_name_edit, text)
+        SCENE_MANAGER_PROVIDER.set_text = lambda text: set_text_on_widget(text_edit, text)
+
+        # Column 2
         newSceneButton = QPushButton("New Scene")
         newSceneButton.setToolTip("Create new scene")
-        row1.addWidget(newSceneButton)
+        col2.addWidget(newSceneButton)
         newSceneButton.released.connect(partial(createScene))
 
         nextSceneButton = QPushButton("Next Scene")
         nextSceneButton.setToolTip("Go to next scene")
-        row1.addWidget(nextSceneButton)
+        col2.addWidget(nextSceneButton)
         nextSceneButton.released.connect(partial(nextScene))
 
         prevSceneButton = QPushButton("Previous Scene")
         prevSceneButton.setToolTip("Go to previous scene")
-        row1.addWidget(prevSceneButton)
+        col2.addWidget(prevSceneButton)
         prevSceneButton.released.connect(partial(prevScene))
 
         deleteSceneButton = QPushButton("Delete Scene")
         deleteSceneButton.setToolTip("Delete selected scene")
-        row1.addWidget(deleteSceneButton)
+        col2.addWidget(deleteSceneButton)
         deleteSceneButton.released.connect(partial(deleteScene))
 
         duplicateSceneButton = QPushButton("Duplicate Scene")
         duplicateSceneButton.setToolTip("Duplicate selected scene")
-        row1.addWidget(duplicateSceneButton)
+        col2.addWidget(duplicateSceneButton)
         duplicateSceneButton.released.connect(partial(duplicateScene))
 
         cutSceneButton = QPushButton("Cut Scene")
         cutSceneButton.setToolTip("Cut selected scene")
-        row1.addWidget(cutSceneButton)
+        col2.addWidget(cutSceneButton)
         cutSceneButton.released.connect(partial(cutScene))
 
         pasteSceneButton = QPushButton("Paste Scene")
         pasteSceneButton.setToolTip("Paste scene from clipboard")
-        row1.addWidget(pasteSceneButton)
+        col2.addWidget(pasteSceneButton)
         pasteSceneButton.released.connect(partial(pasteScene))
 
         changeSceneIgnoredButton = QPushButton("Mark/Unmark Ignored")
         changeSceneIgnoredButton.setToolTip("Marks or unmarks scene as ignored")
-        row1.addWidget(changeSceneIgnoredButton)
+        col2.addWidget(changeSceneIgnoredButton)
         changeSceneIgnoredButton.released.connect(partial(changeSceneIgnored))
+
+        saveDocumentButton = QPushButton("Save")
+        saveDocumentButton.setToolTip("Saves storyboard document and .kra document")
+        col2.addWidget(saveDocumentButton)
+        saveDocumentButton.released.connect(partial(saveDocument))
+
+        refreshDataButton = QPushButton("Refresh")
+        refreshDataButton.setToolTip("Manually refreshes scene data on the widget")
+        col2.addWidget(refreshDataButton)
+        refreshDataButton.released.connect(partial(refresh_scene_data))
 
         debugButton = QPushButton("[DEBUG] Print Scenes]")
         debugButton.setToolTip("Debug")
-        row1.addWidget(debugButton)
+        col2.addWidget(debugButton)
         debugButton.released.connect(partial(printScenes))
 
         print("Storyboard Tool initialized")
 
-        main_layout.addLayout(row1)
-        main_layout.addLayout(row2)
+        main_layout.addLayout(col1)
+        main_layout.addLayout(col2)
 
         uiContainer.setLayout(main_layout)
         self.setWidget(uiContainer)
@@ -433,4 +532,14 @@ class StoryboardToolExtension(Extension):
                 "ignore_scene",
                 str(i18n("Ignore/Unignore Scene")))
         changeSceneIgnoredAction.triggered.connect(changeSceneIgnored)
+
+        saveDocumentAction = window.createAction(
+                "save_document",
+                str(i18n("Save Document and Storyboard data")))
+        saveDocumentAction.triggered.connect(saveDocument)
+
+        refreshSceneAction = window.createAction(
+                "refresh_data",
+                str(i18n("Refresh widget with Scene data")))
+        refreshSceneAction.triggered.connect(refresh_scene_data)
 

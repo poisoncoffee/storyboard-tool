@@ -51,5 +51,17 @@
         <activationFlags>1</activationFlags>
         </Action>
 
+        <Action name="save_document">
+        <icon></icon>
+        <text>Save Document and Storyboard data</text>
+        <activationFlags>1</activationFlags>
+        </Action>
+
+        <Action name="refresh_data">
+        <icon></icon>
+        <text>Refresh Scene Data</text>
+        <activationFlags>1</activationFlags>
+        </Action>
+
     </Actions>
 </ActionCollection>
