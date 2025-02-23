@@ -135,14 +135,35 @@ def refresh_scene_data():
         scene_manager.reemit_signals()
 
 
+def toggle_export_options(widget, main_widget):
+    if widget.isVisible():
+        widget.setVisible(False)
+        widget.setMaximumWidth(0)
+    else:
+        widget.setVisible(True)
+        widget.setMaximumWidth(int(main_widget.width() * 0.25))
+
+
 class StoryboardToolWidget(DockWidget):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Storyboard Tool")
         ui_container = QWidget(self)
-        main_layout = QHBoxLayout(ui_container)     
+        main_layout = QHBoxLayout(ui_container)
+
         col_1 = QVBoxLayout()
         col_2 = QVBoxLayout()
+        col_3 = QVBoxLayout()
+
+        col_1_widget = QWidget()
+        col_1_widget.setLayout(col_1)
+
+        col_2_widget = QWidget()
+        col_2_widget.setLayout(col_2)
+
+        col_3_widget = QWidget()
+        col_3_widget.setLayout(col_3)
+        col_3_widget.setVisible(False)
 
         # Column 1
         character_name_edit = QLineEdit()
@@ -177,7 +198,7 @@ class StoryboardToolWidget(DockWidget):
         delete_scene_button.setToolTip("Delete selected scene")
         col_2.addWidget(delete_scene_button)
         delete_scene_button.released.connect(partial(delete_scene))
-
+        
         duplicate_scene_button = QPushButton("Duplicate Scene")
         duplicate_scene_button.setToolTip("Duplicate selected scene")
         col_2.addWidget(duplicate_scene_button)
@@ -202,16 +223,59 @@ class StoryboardToolWidget(DockWidget):
         save_document_button.setToolTip("Saves storyboard document and .kra document")
         col_2.addWidget(save_document_button)
         save_document_button.released.connect(partial(save_document))
+        
 
         refresh_data_button = QPushButton("Refresh")
         refresh_data_button.setToolTip("Manually refreshes widget with scene data")
         col_2.addWidget(refresh_data_button)
         refresh_data_button.released.connect(partial(refresh_scene_data))
+   
+        export_options_button = QPushButton("Export Options")
+        export_options_button.setToolTip("Toggle export menu")
+        col_2.addWidget(export_options_button)
+        export_options_button.released.connect(partial(toggle_export_options, col_3_widget, ui_container))
+
+        # Column 3 (Hidden by default)
+        form_layout = QFormLayout()
+
+        scale_label = QLabel("Image scale [%]")
+        scale_input = QLineEdit()
+        scale_input.setValidator(QIntValidator())
+        scale_input.setText("100")
+
+        chapter_label = QLabel("Chapter name")
+        chapter_name_input = QLineEdit()
+
+        separator_label = QLabel("Default separator")
+        separator_input = QLineEdit()
+        separator_input.setText("_")
+
+        form_layout.addRow(scale_label, scale_input)
+        form_layout.addRow(chapter_label, chapter_name_input)
+        form_layout.addRow(separator_label, separator_input)
+
+        col_3.addLayout(form_layout)
+
+        export_all_button = QPushButton("Export All")
+        export_all_button.setToolTip("Export All Layers")
+        col_3.addWidget(export_all_button)
+        export_all_button.released.connect(partial(toggle_export_options))
+
+        export_selected_button = QPushButton("Export Selected Layers")
+        export_selected_button.setToolTip("Export Selected Layers")
+        col_3.addWidget(export_selected_button)
+        export_selected_button.released.connect(partial(toggle_export_options))
+
+        export_selected_and_newer = QPushButton("Export Selected and newer")
+        export_selected_and_newer.setToolTip("Export Selected Layer and newer")
+        col_3.addWidget(export_selected_and_newer)
+        export_selected_and_newer.released.connect(partial(toggle_export_options))
 
         print("Storyboard Tool initialized")
 
-        main_layout.addLayout(col_1)
-        main_layout.addLayout(col_2)
+        main_layout.addWidget(col_1_widget)
+        main_layout.addWidget(col_2_widget)
+        main_layout.addWidget(col_3_widget)
 
         ui_container.setLayout(main_layout)
         self.setWidget(ui_container)

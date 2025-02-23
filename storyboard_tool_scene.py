@@ -12,7 +12,7 @@ def get_active_document_path() -> str | None:
     if active_document is not None and (file_path := active_document.fileName()):
         return file_path        
     else:
-        raise_error("There is no active document or the document has not been saved yet")
+        print("There is no active document or the document has not been saved yet")
         return None
 
 
@@ -234,7 +234,7 @@ class SceneManagerProvider():
 
     def create_scene_manager(self) -> SceneManager | None:
         if self.set_character_name is None or self.set_text is None:
-            raise_error("Cannot initialize Scene Manager, widget does not exist")
+            print("Cannot initialize Scene Manager, widget does not exist")
             return None
         scene_manager = SceneManager()
         scene_manager.character_name_updated.connect(self.set_character_name)
