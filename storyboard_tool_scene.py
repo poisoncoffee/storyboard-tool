@@ -12,8 +12,18 @@ def get_active_document_path() -> str | None:
     if active_document is not None and (file_path := active_document.fileName()):
         return file_path        
     else:
-        print("There is no active document or the document has not been saved yet")
+        raise_error("There is no active document or the document has not been saved yet")
         return None
+    
+
+def raise_error(message):
+    msg = QMessageBox()
+    msg.setIcon(QMessageBox.Critical)
+    msg.setText(message)
+    msg.setWindowTitle("Error")
+    msg.setStandardButtons(QMessageBox.Ok)
+
+    msg.exec_()
 
 
 @dataclass
@@ -116,6 +126,8 @@ class SceneManager(QObject):
 
              
     def set_active_scene(self, scene_to_set_active) -> None:
+        if scene_to_set_active is None:
+            return
         for scene in self.scenes:
             scene.node.setCollapsed(scene.node.uniqueId() != scene_to_set_active.node.uniqueId())
         KI.activeDocument().setActiveNode(scene_to_set_active.node)
@@ -123,7 +135,7 @@ class SceneManager(QObject):
         self.text_updated.emit(scene_to_set_active.text) 
 
 
-    def get_next_active_scene(self, current_scene=None, reverse=False) -> Scene:
+    def get_next_active_scene(self, current_scene=None, reverse=False) -> Scene | None:
         if current_scene is None:
             current_scene = self.get_scene(self.get_active_node())
         all_scenes = self.get_all_scenes_in_order()
@@ -134,6 +146,9 @@ class SceneManager(QObject):
         if current_scene_idx == -1:
             return None
         for scene in all_scenes[current_scene_idx + 1:]:
+            if not scene.is_ignored:
+                return scene
+        for scene in reversed(all_scenes[:current_scene_idx]): # If there is no scene "next" scene will return "previous" one
             if not scene.is_ignored:
                 return scene
         return None
@@ -156,14 +171,14 @@ class SceneManager(QObject):
             scene_to_remove = self.get_scene(self.get_active_node())
         self.set_active_scene(self.get_next_active_scene(scene_to_remove))        
         if scene_to_remove is not None:
-            self.scenes = [scene for scene in self.scenes if scene.node.uniqueId() is not scene_to_remove.node.uniqueId()]
+            self.scenes = [scene for scene in self.scenes if scene.node.uniqueId() != scene_to_remove.node.uniqueId()]
             scene_to_remove.node.remove()
 
     
     def duplicate_scene(self, scene_to_duplicate=None) -> None:
         if scene_to_duplicate is None:
             scene_to_duplicate = self.get_scene(self.get_active_node())
-        new_scene = Scene(scene_to_duplicate.node.duplicate())
+        new_scene = scene_to_duplicate.__copy__()
         KI.activeDocument().rootNode().addChildNode(new_scene.node, self.get_scene(self.get_active_node()).node)
         self.scenes.append(new_scene)
         self.set_active_scene(new_scene)
@@ -173,7 +188,7 @@ class SceneManager(QObject):
         if scene_to_cut is None:
             scene_to_cut = self.get_scene(self.get_active_node())
         self.set_active_scene(self.get_next_active_scene(scene_to_cut))
-        self.clipboard = Scene(scene_to_cut.node.duplicate())
+        self.clipboard = scene_to_cut.__copy__()
         self.remove_scene(scene_to_remove=scene_to_cut)
 
 
@@ -212,13 +227,13 @@ class SceneManager(QObject):
             self.character_name_updated.emit(current_scene.character_name)
             self.text_updated.emit(current_scene.text)
 
-    def _create_background_layer():
+    def _create_background_layer(self) -> Node:
         info = InfoObject()
         info.setProperty("color", "White")
         return KI.activeDocument().createFillLayer("Background", "color", info, Selection())
 
 
-    def _create_empty_layer():
+    def _create_empty_layer(self) -> Node:
          return KI.activeDocument().createNode("Paint Layer", "paintlayer")
     
 
@@ -234,7 +249,7 @@ class SceneManagerProvider():
 
     def create_scene_manager(self) -> SceneManager | None:
         if self.set_character_name is None or self.set_text is None:
-            print("Cannot initialize Scene Manager, widget does not exist")
+            raise_error("Cannot initialize Scene Manager, widget does not exist")
             return None
         scene_manager = SceneManager()
         scene_manager.character_name_updated.connect(self.set_character_name)
