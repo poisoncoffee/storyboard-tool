@@ -135,7 +135,7 @@ class SceneManager(QObject):
         self.text_updated.emit(scene_to_set_active.text) 
 
 
-    def get_next_active_scene(self, current_scene=None, reverse=False) -> Scene | None:
+    def get_next_active_scene(self, current_scene=None, reverse=False, can_return_previous=False) -> Scene | None:
         if current_scene is None:
             current_scene = self.get_scene(self.get_active_node())
         all_scenes = self.get_all_scenes_in_order()
@@ -148,9 +148,10 @@ class SceneManager(QObject):
         for scene in all_scenes[current_scene_idx + 1:]:
             if not scene.is_ignored:
                 return scene
-        for scene in reversed(all_scenes[:current_scene_idx]): # If there is no scene "next" scene will return "previous" one
-            if not scene.is_ignored:
-                return scene
+        if can_return_previous:
+            for scene in reversed(all_scenes[:current_scene_idx]): # If there is no scene "next" scene will return "previous" one
+                if not scene.is_ignored:
+                    return scene
         return None
         
 
@@ -169,7 +170,7 @@ class SceneManager(QObject):
     def remove_scene(self, scene_to_remove=None) -> None:
         if scene_to_remove is None:
             scene_to_remove = self.get_scene(self.get_active_node())
-        self.set_active_scene(self.get_next_active_scene(scene_to_remove))        
+        self.set_active_scene(self.get_next_active_scene(current_scene=scene_to_remove, can_return_previous=True))        
         if scene_to_remove is not None:
             self.scenes = [scene for scene in self.scenes if scene.node.uniqueId() != scene_to_remove.node.uniqueId()]
             scene_to_remove.node.remove()
@@ -187,7 +188,7 @@ class SceneManager(QObject):
     def cut_scene(self, scene_to_cut=None) -> None:
         if scene_to_cut is None:
             scene_to_cut = self.get_scene(self.get_active_node())
-        self.set_active_scene(self.get_next_active_scene(scene_to_cut))
+        self.set_active_scene(self.get_next_active_scene(current_scene=scene_to_cut, can_return_previous=True))
         self.clipboard = scene_to_cut.__copy__()
         self.remove_scene(scene_to_remove=scene_to_cut)
 
