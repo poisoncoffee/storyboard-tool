@@ -7,7 +7,6 @@ from PyQt5.QtWidgets import (
     QLineEdit,
     QHBoxLayout,
     QVBoxLayout,
-    QSplitter,
     QWidget,
 )
 
@@ -182,6 +181,13 @@ class StoryboardExportOptionsWidget(DockWidget):
 
 
 class StoryboardToolWidget(DockWidget):
+    def getNewSeparator(self) -> QFrame:
+        separator = QFrame()
+        separator.setFrameShape(QFrame.HLine)
+        separator.setFrameShadow(QFrame.Sunken)
+        return separator
+        
+
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Storyboard Tool")
@@ -225,7 +231,7 @@ class StoryboardToolWidget(DockWidget):
         col_2.addWidget(delete_scene_button)
         delete_scene_button.released.connect(partial(delete_scene))
 
-        # TODO separator
+        col_2.addWidget(self.getNewSeparator())
 
         next_scene_button = QPushButton("Next Scene")
         next_scene_button.setToolTip("Go to next scene")
@@ -253,7 +259,7 @@ class StoryboardToolWidget(DockWidget):
         col_3.addWidget(paste_scene_button)
         paste_scene_button.released.connect(partial(paste_scene))
 
-        # TODO separator
+        col_3.addWidget(self.getNewSeparator())
 
         change_scene_ignored_button = QPushButton("Un/mark Ignored")
         change_scene_ignored_button.setToolTip("Marks or unmarks scene as ignored")
@@ -265,7 +271,7 @@ class StoryboardToolWidget(DockWidget):
         col_3.addWidget(refresh_data_button)
         refresh_data_button.released.connect(partial(refresh_scene_data))
 
-        # TODO separator
+        col_3.addWidget(self.getNewSeparator())
 
         save_document_button = QPushButton("Save")
         save_document_button.setToolTip("Saves storyboard document and .kra document")
