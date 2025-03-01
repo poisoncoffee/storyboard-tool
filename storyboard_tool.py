@@ -7,6 +7,7 @@ from PyQt5.QtWidgets import (
     QLineEdit,
     QHBoxLayout,
     QVBoxLayout,
+    QSplitter,
     QWidget,
 )
 
@@ -26,16 +27,6 @@ def delete_confirmation_dialog():
     
     if response := msg.exec_():
         return response == QMessageBox.Yes
-
-
-def raise_error(message):
-    msg = QMessageBox()
-    msg.setIcon(QMessageBox.Critical)
-    msg.setText(message)
-    msg.setWindowTitle("Error")
-    msg.setStandardButtons(QMessageBox.Ok)
-
-    msg.exec_()
          
 
 # UI Actions
@@ -135,13 +126,59 @@ def refresh_scene_data():
         scene_manager.reemit_signals()
 
 
-def toggle_export_options(widget, main_widget):
-    if widget.isVisible():
-        widget.setVisible(False)
-        widget.setMaximumWidth(0)
-    else:
-        widget.setVisible(True)
-        widget.setMaximumWidth(int(main_widget.width() * 0.25))
+def toggle_export_options():
+    next((dock.show() for dock in Krita.instance().dockers() if dock.windowTitle() == "Storyboard Export Options"), None)
+
+
+class StoryboardExportOptionsWidget(DockWidget):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("Storyboard Export Options")
+        ui_container = QWidget(self)
+        main_layout = QVBoxLayout(ui_container)
+
+        form_layout = QFormLayout()
+
+        scale_label = QLabel("Image scale [%]")
+        scale_input = QLineEdit()
+        scale_input.setValidator(QIntValidator())
+        scale_input.setText("100")
+
+        chapter_label = QLabel("Chapter name")
+        chapter_name_input = QLineEdit()
+
+        separator_label = QLabel("Default separator")
+        separator_input = QLineEdit()
+        separator_input.setText("_")
+
+        form_layout.addRow(scale_label, scale_input)
+        form_layout.addRow(chapter_label, chapter_name_input)
+        form_layout.addRow(separator_label, separator_input)
+
+        main_layout.addLayout(form_layout)
+
+        export_all_button = QPushButton("Export All")
+        export_all_button.setToolTip("Export All Layers")
+        main_layout.addWidget(export_all_button)
+        export_all_button.released.connect(partial(toggle_export_options))
+
+        export_selected_button = QPushButton("Export Selected Layers")
+        export_selected_button.setToolTip("Export Selected Layers")
+        main_layout.addWidget(export_selected_button)
+        export_selected_button.released.connect(partial(toggle_export_options))
+
+        export_selected_and_newer = QPushButton("Export Selected and newer")
+        export_selected_and_newer.setToolTip("Export Selected Layer and newer")
+        main_layout.addWidget(export_selected_and_newer)
+        export_selected_and_newer.released.connect(partial(toggle_export_options))
+
+        ui_container.setLayout(main_layout)
+        
+        self.setWidget(ui_container)
+
+
+    def canvasChanged(self, canvas):
+        pass
 
 
 class StoryboardToolWidget(DockWidget):
@@ -149,7 +186,7 @@ class StoryboardToolWidget(DockWidget):
         super().__init__()
         self.setWindowTitle("Storyboard Tool")
         ui_container = QWidget(self)
-        main_layout = QHBoxLayout(ui_container)
+        main_layout = QHBoxLayout(ui_container)        
 
         col_1 = QVBoxLayout()
         col_2 = QVBoxLayout()
@@ -163,7 +200,6 @@ class StoryboardToolWidget(DockWidget):
 
         col_3_widget = QWidget()
         col_3_widget.setLayout(col_3)
-        col_3_widget.setVisible(False)
 
         # Column 1
         character_name_edit = QLineEdit()
@@ -184,6 +220,13 @@ class StoryboardToolWidget(DockWidget):
         col_2.addWidget(new_scene_button)
         new_scene_button.released.connect(partial(create_scene))
 
+        delete_scene_button = QPushButton("Delete Scene")
+        delete_scene_button.setToolTip("Delete selected scene")
+        col_2.addWidget(delete_scene_button)
+        delete_scene_button.released.connect(partial(delete_scene))
+
+        # TODO separator
+
         next_scene_button = QPushButton("Next Scene")
         next_scene_button.setToolTip("Go to next scene")
         col_2.addWidget(next_scene_button)
@@ -194,82 +237,45 @@ class StoryboardToolWidget(DockWidget):
         col_2.addWidget(prev_scene_button)
         prev_scene_button.released.connect(partial(prev_scene))
 
-        delete_scene_button = QPushButton("Delete Scene")
-        delete_scene_button.setToolTip("Delete selected scene")
-        col_2.addWidget(delete_scene_button)
-        delete_scene_button.released.connect(partial(delete_scene))
-        
+        # Column 3        
         duplicate_scene_button = QPushButton("Duplicate Scene")
         duplicate_scene_button.setToolTip("Duplicate selected scene")
-        col_2.addWidget(duplicate_scene_button)
+        col_3.addWidget(duplicate_scene_button)
         duplicate_scene_button.released.connect(partial(duplicate_scene))
 
         cut_scene_button = QPushButton("Cut Scene")
         cut_scene_button.setToolTip("Cut selected scene")
-        col_2.addWidget(cut_scene_button)
+        col_3.addWidget(cut_scene_button)
         cut_scene_button.released.connect(partial(cut_scene))
 
         paste_scene_button = QPushButton("Paste Scene")
         paste_scene_button.setToolTip("Paste scene from clipboard")
-        col_2.addWidget(paste_scene_button)
+        col_3.addWidget(paste_scene_button)
         paste_scene_button.released.connect(partial(paste_scene))
 
-        change_scene_ignored_button = QPushButton("Mark/Unmark Ignored")
-        change_scene_ignored_button.setToolTip("Marks or unmarks scene as ignored")
-        col_2.addWidget(change_scene_ignored_button)
-        change_scene_ignored_button.released.connect(partial(change_scene_ignored))
+        # TODO separator
 
-        save_document_button = QPushButton("Save")
-        save_document_button.setToolTip("Saves storyboard document and .kra document")
-        col_2.addWidget(save_document_button)
-        save_document_button.released.connect(partial(save_document))
-        
+        change_scene_ignored_button = QPushButton("Un/mark Ignored")
+        change_scene_ignored_button.setToolTip("Marks or unmarks scene as ignored")
+        col_3.addWidget(change_scene_ignored_button)
+        change_scene_ignored_button.released.connect(partial(change_scene_ignored))
 
         refresh_data_button = QPushButton("Refresh")
         refresh_data_button.setToolTip("Manually refreshes widget with scene data")
-        col_2.addWidget(refresh_data_button)
+        col_3.addWidget(refresh_data_button)
         refresh_data_button.released.connect(partial(refresh_scene_data))
+
+        # TODO separator
+
+        save_document_button = QPushButton("Save")
+        save_document_button.setToolTip("Saves storyboard document and .kra document")
+        col_3.addWidget(save_document_button)
+        save_document_button.released.connect(partial(save_document))
    
         export_options_button = QPushButton("Export Options")
         export_options_button.setToolTip("Toggle export menu")
-        col_2.addWidget(export_options_button)
-        export_options_button.released.connect(partial(toggle_export_options, col_3_widget, ui_container))
-
-        # Column 3 (Hidden by default)
-        form_layout = QFormLayout()
-
-        scale_label = QLabel("Image scale [%]")
-        scale_input = QLineEdit()
-        scale_input.setValidator(QIntValidator())
-        scale_input.setText("100")
-
-        chapter_label = QLabel("Chapter name")
-        chapter_name_input = QLineEdit()
-
-        separator_label = QLabel("Default separator")
-        separator_input = QLineEdit()
-        separator_input.setText("_")
-
-        form_layout.addRow(scale_label, scale_input)
-        form_layout.addRow(chapter_label, chapter_name_input)
-        form_layout.addRow(separator_label, separator_input)
-
-        col_3.addLayout(form_layout)
-
-        export_all_button = QPushButton("Export All")
-        export_all_button.setToolTip("Export All Layers")
-        col_3.addWidget(export_all_button)
-        export_all_button.released.connect(partial(toggle_export_options))
-
-        export_selected_button = QPushButton("Export Selected Layers")
-        export_selected_button.setToolTip("Export Selected Layers")
-        col_3.addWidget(export_selected_button)
-        export_selected_button.released.connect(partial(toggle_export_options))
-
-        export_selected_and_newer = QPushButton("Export Selected and newer")
-        export_selected_and_newer.setToolTip("Export Selected Layer and newer")
-        col_3.addWidget(export_selected_and_newer)
-        export_selected_and_newer.released.connect(partial(toggle_export_options))
+        col_3.addWidget(export_options_button)
+        export_options_button.released.connect(partial(toggle_export_options))
 
         print("Storyboard Tool initialized")
 
@@ -278,6 +284,7 @@ class StoryboardToolWidget(DockWidget):
         main_layout.addWidget(col_3_widget)
 
         ui_container.setLayout(main_layout)
+        
         self.setWidget(ui_container)
 
     def canvasChanged(self, canvas):
@@ -290,9 +297,13 @@ class StoryboardToolExtension(Extension):
 
 
     def setup(self):
-        docker = DockWidgetFactory(
+        main_dock = DockWidgetFactory(
         "pykrita_storyboard_tool", DockWidgetFactoryBase.DockRight, StoryboardToolWidget)
-        Krita.instance().addDockWidgetFactory(docker)
+        Krita.instance().addDockWidgetFactory(main_dock)
+
+        export_dock = DockWidgetFactory(
+        "pykrita_storyboard_export", DockWidgetFactoryBase.DockRight, StoryboardExportOptionsWidget)
+        Krita.instance().addDockWidgetFactory(export_dock)
 
 
     def createActions(self, window):
