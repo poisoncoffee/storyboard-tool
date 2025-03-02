@@ -1,4 +1,4 @@
-from .storyboard_tool_scene import SceneManagerProvider
+from .storyboard_tool_scene import SceneManagerProvider, ExportConfig
 from krita import *
 
 from PyQt5.QtWidgets import QTextEdit, QMessageBox
@@ -129,6 +129,13 @@ def toggle_export_options():
     next((dock.show() for dock in Krita.instance().dockers() if dock.windowTitle() == "Storyboard Export Options"), None)
 
 
+def export(config):
+    scene_manager = SCENE_MANAGER_PROVIDER.try_get_scene_manager()
+    if scene_manager is not None:
+        config = ExportConfig()
+        scene_manager.export(config)
+
+
 class StoryboardExportOptionsWidget(DockWidget):
     def __init__(self):
         super().__init__()
@@ -159,17 +166,17 @@ class StoryboardExportOptionsWidget(DockWidget):
         export_all_button = QPushButton("Export All")
         export_all_button.setToolTip("Export All Layers")
         main_layout.addWidget(export_all_button)
-        export_all_button.released.connect(partial(toggle_export_options))
+        export_all_button.released.connect(partial(export, None))
 
         export_selected_button = QPushButton("Export Selected Layers")
         export_selected_button.setToolTip("Export Selected Layers")
         main_layout.addWidget(export_selected_button)
-        export_selected_button.released.connect(partial(toggle_export_options))
+        export_selected_button.released.connect(partial(export, None))
 
         export_selected_and_newer = QPushButton("Export Selected and newer")
         export_selected_and_newer.setToolTip("Export Selected Layer and newer")
         main_layout.addWidget(export_selected_and_newer)
-        export_selected_and_newer.released.connect(partial(toggle_export_options))
+        export_selected_and_newer.released.connect(partial(export, None))
 
         ui_container.setLayout(main_layout)
         

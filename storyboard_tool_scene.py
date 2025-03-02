@@ -68,6 +68,46 @@ class Scene:
         return self
 
 
+@dataclass
+class ExportConfig:
+    chapter_name: str = field(default="unnamed_chapter")
+    extension: str = field(default="jpg")
+    delimiter: str = field(default="_")
+    scale: int = field(default=1)
+
+
+# Export Helpers
+
+def get_png_config() -> InfoObject:
+    info_object = InfoObject()
+    info_object.setProperty("alpha", True)
+    info_object.setProperty("compression", 1)
+    info_object.setProperty("forceSRGB", False)
+    info_object.setProperty("indexed", False)
+    info_object.setProperty("interlaced", False)
+    info_object.setProperty("saveSRGBProfile", False)
+    info_object.setProperty("transparencyFillcolor", [255,255,255])
+    return info_object
+
+def get_jpg_config() -> InfoObject:
+    info_object = InfoObject()
+    info_object.setProperty("baseline", False)
+    info_object.setProperty("exif", False)
+    info_object.setProperty("filters", False)
+    info_object.setProperty("forceSRGB", False)
+    info_object.setProperty("iptc", False)
+    info_object.setProperty("is_sRGB", False)
+    info_object.setProperty("optimize", False)
+    info_object.setProperty("progressive", False)
+    info_object.setProperty("quality", 50)
+    info_object.setProperty("saveProfile", True)
+    info_object.setProperty("smoothing", 50)
+    info_object.setProperty("subsampling", 1)
+    info_object.setProperty("xmp", False)
+    info_object.setProperty("transparencyFillcolor", [255,255,255])
+    return info_object
+
+
 class SceneManager(QObject):
     character_name_updated = pyqtSignal(str)
     text_updated = pyqtSignal(str)
@@ -95,6 +135,19 @@ class SceneManager(QObject):
             json.dump([scene.to_dict() for scene in self.scenes], file, indent=4)
         if save_document:
             KI.activeDocument().save()
+
+
+    def export(self, config):
+        dir = Path(get_active_document_path()).parent / "storyboard"
+        dir.mkdir(exist_ok=True)
+        x_res = KI.activeDocument().xRes()
+        y_res = KI.activeDocument().yRes()
+        for i, scene in enumerate(self.scenes, start=1):
+            name = scene.node.name().strip().replace(" ", config.delimiter)
+            path = dir / f"{config.chapter_name}{config.delimiter}{name}{config.delimiter}{i}.{config.extension}"
+            print(path)
+            result = scene.node.save(str(path), x_res, y_res, get_jpg_config())
+            print(f"save result: {result}")
 
 
     def is_root(self, node) -> bool:
