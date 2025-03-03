@@ -1,5 +1,5 @@
 from krita import *
-from PyQt5.QtCore import pyqtSignal, QObject, QUuid
+from PyQt5.QtCore import pyqtSignal, QObject, QPointF, QUuid
 
 from dataclasses import dataclass, field
 import json
@@ -73,7 +73,7 @@ class ExportConfig:
     chapter_name: str = field(default="unnamed_chapter")
     extension: str = field(default="jpg")
     delimiter: str = field(default="_")
-    scale: int = field(default=1)
+    scale: float = field(default=1.0)
 
 
 # Export Helpers
@@ -140,14 +140,13 @@ class SceneManager(QObject):
     def export(self, config):
         dir = Path(get_active_document_path()).parent / "storyboard"
         dir.mkdir(exist_ok=True)
-        x_res = KI.activeDocument().xRes()
-        y_res = KI.activeDocument().yRes()
         for i, scene in enumerate(self.scenes, start=1):
+            if scene.is_ignored:
+                continue
             name = scene.node.name().strip().replace(" ", config.delimiter)
             path = dir / f"{config.chapter_name}{config.delimiter}{name}{config.delimiter}{i}.{config.extension}"
             print(path)
-            result = scene.node.save(str(path), x_res, y_res, get_jpg_config())
-            print(f"save result: {result}")
+            scene.node.save(str(path), 0, 0, get_jpg_config())
 
 
     def is_root(self, node) -> bool:

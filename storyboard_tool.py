@@ -13,7 +13,8 @@ from PyQt5.QtWidgets import (
 from functools import partial
 
 
-SCENE_MANAGER_PROVIDER = SceneManagerProvider() 
+SCENE_MANAGER_PROVIDER = SceneManagerProvider()
+EXPORT_CONFIG = ExportConfig()
 
 # UI Helpers
 
@@ -120,6 +121,7 @@ def print_scenes():
 
 
 def refresh_scene_data():
+    global SCENE_MANAGER_PROVIDER
     scene_manager = SCENE_MANAGER_PROVIDER.try_get_scene_manager()
     if scene_manager is not None:
         scene_manager.reemit_signals()
@@ -129,11 +131,33 @@ def toggle_export_options():
     next((dock.show() for dock in Krita.instance().dockers() if dock.windowTitle() == "Storyboard Export Options"), None)
 
 
-def export(config):
+def update_scale(value):
+    if value:
+        global EXPORT_CONFIG
+        EXPORT_CONFIG.scale = float(int(value) / 100)
+
+
+def update_chapter_name(value):
+    global EXPORT_CONFIG
+    EXPORT_CONFIG.chapter_name = value
+
+
+def update_delimiter(value):
+    global EXPORT_CONFIG
+    EXPORT_CONFIG.delimiter = value
+
+
+def update_extension(value):
+    global EXPORT_CONFIG
+    EXPORT_CONFIG.extension = value
+
+
+def export():
+    global SCENE_MANAGER_PROVIDER
     scene_manager = SCENE_MANAGER_PROVIDER.try_get_scene_manager()
     if scene_manager is not None:
-        config = ExportConfig()
-        scene_manager.export(config)
+        global EXPORT_CONFIG
+        scene_manager.export(EXPORT_CONFIG)
 
 
 class StoryboardExportOptionsWidget(DockWidget):
@@ -144,39 +168,51 @@ class StoryboardExportOptionsWidget(DockWidget):
         main_layout = QVBoxLayout(ui_container)
 
         form_layout = QFormLayout()
+        global EXPORT_CONFIG
+
+        chapter_label = QLabel("Chapter name")
+        chapter_name_input = QLineEdit()
+        chapter_name_input.setText(EXPORT_CONFIG.chapter_name)
+        chapter_name_input.textChanged.connect(update_chapter_name)
 
         scale_label = QLabel("Image scale [%]")
         scale_input = QLineEdit()
         scale_input.setValidator(QIntValidator())
-        scale_input.setText("100")
+        scale_input.setText(str(int(EXPORT_CONFIG.scale * 100)))
+        scale_input.textChanged.connect(update_scale)
 
-        chapter_label = QLabel("Chapter name")
-        chapter_name_input = QLineEdit()
+        delimiter_label = QLabel("Default separator")
+        delimiter_input = QLineEdit()
+        delimiter_input.setText(EXPORT_CONFIG.delimiter)
+        delimiter_input.textChanged.connect(update_delimiter)
 
-        separator_label = QLabel("Default separator")
-        separator_input = QLineEdit()
-        separator_input.setText("_")
+        extension_label = QLabel("File format")
+        extension_dropdown = QComboBox()
+        extension_dropdown.addItems(["jpg", "png"])
+        extension_dropdown.setCurrentText(EXPORT_CONFIG.extension)
+        extension_dropdown.currentTextChanged.connect(update_extension)
 
         form_layout.addRow(scale_label, scale_input)
         form_layout.addRow(chapter_label, chapter_name_input)
-        form_layout.addRow(separator_label, separator_input)
+        form_layout.addRow(delimiter_label, delimiter_input)
+        form_layout.addRow(extension_label, extension_dropdown)
 
         main_layout.addLayout(form_layout)
 
         export_all_button = QPushButton("Export All")
         export_all_button.setToolTip("Export All Layers")
         main_layout.addWidget(export_all_button)
-        export_all_button.released.connect(partial(export, None))
+        export_all_button.released.connect(partial(export))
 
         export_selected_button = QPushButton("Export Selected Layers")
         export_selected_button.setToolTip("Export Selected Layers")
         main_layout.addWidget(export_selected_button)
-        export_selected_button.released.connect(partial(export, None))
+        export_selected_button.released.connect(partial(export))
 
         export_selected_and_newer = QPushButton("Export Selected and newer")
         export_selected_and_newer.setToolTip("Export Selected Layer and newer")
         main_layout.addWidget(export_selected_and_newer)
-        export_selected_and_newer.released.connect(partial(export, None))
+        export_selected_and_newer.released.connect(partial(export))
 
         ui_container.setLayout(main_layout)
         
