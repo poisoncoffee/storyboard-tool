@@ -1,5 +1,6 @@
 from krita import *
-from PyQt5.QtCore import pyqtSignal, QObject, QPointF, QUuid
+from PyQt5.QtCore import pyqtSignal, QObject, QUuid
+from PyQt5.QtGui import QImage, QPixmap
 
 from dataclasses import dataclass, field
 import json
@@ -76,38 +77,6 @@ class ExportConfig:
     scale: float = field(default=1.0)
 
 
-# Export Helpers
-
-def get_png_config() -> InfoObject:
-    info_object = InfoObject()
-    info_object.setProperty("alpha", True)
-    info_object.setProperty("compression", 1)
-    info_object.setProperty("forceSRGB", False)
-    info_object.setProperty("indexed", False)
-    info_object.setProperty("interlaced", False)
-    info_object.setProperty("saveSRGBProfile", False)
-    info_object.setProperty("transparencyFillcolor", [255,255,255])
-    return info_object
-
-def get_jpg_config() -> InfoObject:
-    info_object = InfoObject()
-    info_object.setProperty("baseline", False)
-    info_object.setProperty("exif", False)
-    info_object.setProperty("filters", False)
-    info_object.setProperty("forceSRGB", False)
-    info_object.setProperty("iptc", False)
-    info_object.setProperty("is_sRGB", False)
-    info_object.setProperty("optimize", False)
-    info_object.setProperty("progressive", False)
-    info_object.setProperty("quality", 50)
-    info_object.setProperty("saveProfile", True)
-    info_object.setProperty("smoothing", 50)
-    info_object.setProperty("subsampling", 1)
-    info_object.setProperty("xmp", False)
-    info_object.setProperty("transparencyFillcolor", [255,255,255])
-    return info_object
-
-
 class SceneManager(QObject):
     character_name_updated = pyqtSignal(str)
     text_updated = pyqtSignal(str)
@@ -137,6 +106,27 @@ class SceneManager(QObject):
             KI.activeDocument().save()
 
 
+    def node_to_image(self, node, scale=1) -> QImage:
+        bounds = node.bounds()
+        SRGB_PROFILE = "sRGB-elle-V2-srgbtrc.icc"
+        is_srgb = (
+        node.colorModel() == "RGBA"
+        and node.colorDepth() == "U8"
+        and node.colorProfile().lower() == SRGB_PROFILE.lower()
+        )
+
+        if is_srgb:
+            pixel_data = node.projectionPixelData(bounds.x(), bounds.y(), bounds.width(), bounds.height()).data()
+        else:
+            temp_node = node.duplicate()
+            temp_node.setColorSpace("RGBA", "U8", SRGB_PROFILE)
+            pixel_data = temp_node.projectionPixelData(bounds.x(), bounds.y(), bounds.width(), bounds.height()).data()
+
+        image = QImage(pixel_data, bounds.width(), bounds.height(), QImage.Format_ARGB32)
+        image = image.scaled(int(bounds.width() * scale), int(bounds.height() * scale))
+        return image
+
+
     def export(self, config):
         dir = Path(get_active_document_path()).parent / "storyboard"
         dir.mkdir(exist_ok=True)
@@ -146,7 +136,8 @@ class SceneManager(QObject):
             name = scene.node.name().strip().replace(" ", config.delimiter)
             path = dir / f"{config.chapter_name}{config.delimiter}{name}{config.delimiter}{i}.{config.extension}"
             print(path)
-            scene.node.save(str(path), 0, 0, get_jpg_config())
+            image = self.node_to_image(scene.node, config.scale)            
+            QPixmap.fromImage(image).save(str(path))
 
 
     def is_root(self, node) -> bool:
