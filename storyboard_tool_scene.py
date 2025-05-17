@@ -125,19 +125,37 @@ class SceneManager(QObject):
         image = QImage(pixel_data, bounds.width(), bounds.height(), QImage.Format_ARGB32)
         image = image.scaled(int(bounds.width() * scale), int(bounds.height() * scale))
         return image
+    
+
+    def add_scene_to_script(self, scene, image_path, script_path) -> None:
+        with open(script_path, "a", encoding="utf-8") as file:
+            image_def = f"image {Path(image_path).stem} Image(\"{Path(image_path).name}\")"
+            show_image = f"scene {Path(image_path).stem}"
+            dialogue = f"{scene.character_name} \"{scene.text}\""
+            file.write(image_def + "\n")
+            file.write(show_image + "\n")
+            if scene.text:
+                file.write(dialogue + "\n")
+            file.write("\n")
 
 
-    def export(self, config):
+    def export(self, config) -> None:
         dir = Path(get_active_document_path()).parent / "storyboard"
         dir.mkdir(exist_ok=True)
+        script_path = dir / f"{config.chapter_name}.rpy"
+        with open(script_path, "w", encoding="utf-8") as file:
+            file.write("") # Create empty file; overwrite if exists
         for i, scene in enumerate(self.scenes, start=1):
             if scene.is_ignored:
                 continue
             name = scene.node.name().strip().replace(" ", config.delimiter)
-            path = dir / f"{config.chapter_name}{config.delimiter}{name}{config.delimiter}{i}.{config.extension}"
-            print(path)
+            image_path = dir / f"{config.chapter_name}{config.delimiter}{name}{config.delimiter}{i}.{config.extension}"
+            print(image_path)
+            # Export image
             image = self.node_to_image(scene.node, config.scale)            
-            QPixmap.fromImage(image).save(str(path))
+            QPixmap.fromImage(image).save(str(image_path))
+            # Export script
+            self.add_scene_to_script(scene, image_path = image_path, script_path=script_path)
 
 
     def is_root(self, node) -> bool:
